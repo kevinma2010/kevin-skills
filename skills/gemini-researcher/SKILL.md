@@ -1,3 +1,8 @@
+---
+name: gemini-researcher
+description: 用 Gemini CLI 进行研究任务，支持深度研究、快速总结、对比分析等模式
+---
+
 # gemini-researcher
 
 用 Gemini CLI 进行研究任务的小助手。
