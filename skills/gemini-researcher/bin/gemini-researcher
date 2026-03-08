@@ -1,0 +1,240 @@
+#!/bin/bash
+
+# Gemini Researcher - 研究任务小助手
+
+# 检查 gemini 是否安装
+if ! command -v gemini &> /dev/null; then
+    echo "Error: gemini CLI 未安装" >&2
+    echo "请运行: npm install -g @google/gemini-cli" >&2
+    exit 1
+fi
+
+# 默认配置
+DEFAULT_MODEL=""
+JSON_MODE=0
+
+# 解析命令行参数
+MODEL_ARG=""
+PASS_ARGS=""
+
+while [[ "$1" == --* ]]; do
+    case "$1" in
+        --model)
+            DEFAULT_MODEL="$2"
+            shift 2
+            ;;
+        --model=*)
+            DEFAULT_MODEL="${1#*=}"
+            shift
+            ;;
+        --json)
+            JSON_MODE=1
+            shift
+            ;;
+        *)
+            PASS_ARGS="$PASS_ARGS $1"
+            shift
+            ;;
+    esac
+done
+
+# 设置模型参数
+if [ -n "$DEFAULT_MODEL" ]; then
+    MODEL_ARG="-m $DEFAULT_MODEL"
+fi
+
+# 辅助函数：运行 gemini
+run_gemini() {
+    local prompt="$1"
+    local instruction="请根据最新的 Google 搜索结果回答。如果不确定信息准确性，请先搜索确认。 "
+    
+    if [ "$JSON_MODE" -eq 1 ]; then
+        instruction="${instruction}请务必以严格的 JSON 格式输出结果，不要输出任何 Markdown 代码块包裹符号（如 \`\`\`json ），也不要包含额外的解释说明文字。推荐输出结构：{\"results\": [{\"title\": \"...\", \"url\": \"...\", \"snippet\": \"...\"}]} 或 {\"answer\": \"...\", \"sources\": [{\"url\": \"...\"}]}。"
+    fi
+    
+    local full_prompt="${instruction}
+
+请求内容：
+$prompt"
+    
+    if ! gemini $MODEL_ARG $PASS_ARGS "$full_prompt"; then
+        echo "Error: Gemini 请求失败" >&2
+        exit 1
+    fi
+}
+
+# 模板定义
+DEEP_TEMPLATE='你是一个专业的研究分析师，供其他系统作为“深度搜索引擎”调用。请对以下主题进行深度研究评估。\n\n【强制执行规则】：\n1. 你的每一项陈述、技术细节、案例描述都**必须**基于真实的 Google 搜索结果。如果不确定，必须先进行搜索。\n2. 严禁基于预训练常识捏造事实。如果通过搜索未能获取足够信息，请如实回答“未找到足够信息”。\n3. 必须在所有事实、数据、观点后使用 [1], [2] 的格式高亮引用出处。\n4. 文末必须包含一个名为 "## 参考资料来源" 的列表，并在其中附带对应序号的实际链接。\n\n主题：%s\n\n请以结构化的 Markdown 输出，包括：背景介绍、核心概念、技术细节、优缺点分析、实际应用案例、总结。'
+
+SUMMARY_TEMPLATE='你是一个专业的摘要剥离器，负责给其他信息系统提供干练的信息。\n请基于真实的网页最新内容，用最干练的 2-3 句话提取以下目标的核心要点。不要出现“这段内容在讲”、“摘要如下”这样的废话：\n\n%s'
+
+COMPARE_TEMPLATE='你是一个专业的技术分析引擎。请对比分析以下两个事物，必须基于最新的真实搜索结果。\n要求：\n1. 必须使用 Markdown 表格呈现\n2. 若有明确的事实依据，请尽量在表格后附带来源链接 [1]\n3. 对比维度包括但不限于：功能特性、性能表现、学习曲线、适用场景、优缺点。\n\n事物 A：%s\n事物 B：%s'
+
+LIST_TEMPLATE='你是一个结构化提取器。请基于最新的搜索结果，列出关于 "%s" 的 %d 个确切关键点。\n要求：\n1. 每个关键点必须且只用一句话说明，直接说明核心信息。\n2. 涉及非通用常识的论点，必须提供信息来源。'
+
+NEWS_TEMPLATE='你是一个实时新闻监控探针。请查询并汇总关于 "%s" 的最新新闻和动态。\n要求：\n1. 必须按事件发生的时间顺序排列。\n2. 每一条新闻必须包含具体发生日期、核心事件描述，以及该事件的确切来源（来源名称 + 链接 url）。'
+
+FIND_TEMPLATE='你是一个强大的资源挖掘引擎。请帮我查找以下类型的真实可用资源：\n\n%s\n\n要求：\n1. 只列出当前真实存在、可用且高度相关的前几个资源。\n2. 每个资源必须包含：名称、确切的官方或仓库全称为 URL、以及简要且客观的一句话特点评估。'
+
+LINKS_TEMPLATE='你是一个纯净的链接检索器。\n请搜索并返回关于 "%s" 的最相关、权威的网页链接。\n\n要求：\n1. 仅返回最佳结果的 URL 列表及其标题。\n2. 严禁包含任何额外的解释说明文案或总结文字。'
+
+# 显示帮助
+show_help() {
+    cat << EOF
+Gemini Researcher - 研究任务小助手
+
+用法:
+    gemini-researcher [options] <command> [args]
+
+选项:
+    --model <name>    指定模型
+    --json            以 JSON 格式输出结果
+
+命令:
+    deep <topic>         深度研究模式
+    summary <content>    快速总结模式
+    compare <a> vs <b>   对比分析模式
+    list <topic> [n]     列表整理模式
+    news <topic>         新闻汇总
+    find <type>          资源查找
+    links <topic>        纯链接检索
+    extract <url> <type> 提取要点
+    template <type>      显示模板
+    types                列出所有命令
+
+示例:
+    gemini-researcher deep "AI Agent 2025 趋势"
+    gemini-researcher --json links "最新开源大模型"
+    gemini-researcher --model gemini-2.0-flash compare "React vs Vue"
+EOF
+}
+
+# 显示所有命令类型
+show_types() {
+    cat << 'EOF'
+可用命令类型:
+  deep          - 深度研究（详细报告）
+  summary       - 快速总结
+  compare       - 对比分析
+  list          - 列表整理
+  news          - 新闻汇总
+  find          - 资源查找
+  links         - 纯链接检索
+  extract       - 提取要点
+EOF
+}
+
+# 显示模板
+show_template() {
+    local type=$1
+    case $type in
+        deep) echo "$DEEP_TEMPLATE" ;;
+        summary) echo "$SUMMARY_TEMPLATE" ;;
+        compare) echo "$COMPARE_TEMPLATE" ;;
+        list) echo "$LIST_TEMPLATE" ;;
+        news) echo "$NEWS_TEMPLATE" ;;
+        find) echo "$FIND_TEMPLATE" ;;
+        links) echo "$LINKS_TEMPLATE" ;;
+        extract) echo "$EXTRACT_TEMPLATE" ;;
+        *) echo "未知类型: $type"; show_types ;;
+    esac
+}
+
+# 深度研究
+cmd_deep() {
+    local topic="$*"
+    [ -z "$topic" ] && echo "Error: 请指定研究主题" >&2 && exit 1
+    run_gemini "$(printf "$DEEP_TEMPLATE" "$topic")"
+}
+
+# 快速总结
+cmd_summary() {
+    local content="$*"
+    [ -z "$content" ] && echo "Error: 请提供内容" >&2 && exit 1
+    if [[ "$content" == http* ]]; then
+        content="请总结以下网页内容：$content"
+    fi
+    run_gemini "$(printf "$SUMMARY_TEMPLATE" "$content")"
+}
+
+# 对比分析
+cmd_compare() {
+    local input="$*"
+    [[ ! "$input" == *" vs "* ]] && echo "Error: 使用 'vs' 分隔，如: compare A vs B" >&2 && exit 1
+    local a="${input%% vs *}"
+    local b="${input##* vs }"
+    run_gemini "$(printf "$COMPARE_TEMPLATE" "$a" "$b")"
+}
+
+# 列表整理
+cmd_list() {
+    local topic=""
+    local number=5
+    for arg in "$@"; do
+        if [[ "$arg" =~ ^[0-9]+$ ]]; then
+            number=$arg
+        else
+            topic="$topic $arg"
+        fi
+    done
+    topic=$(echo "$topic" | xargs)
+    [ -z "$topic" ] && echo "Error: 请指定列表主题" >&2 && exit 1
+    run_gemini "$(printf "$LIST_TEMPLATE" "$topic" "$number")"
+}
+
+
+# 新闻汇总
+cmd_news() {
+    local topic="$*"
+    [ -z "$topic" ] && echo "Error: 请指定新闻主题" >&2 && exit 1
+    run_gemini "$(printf "$NEWS_TEMPLATE" "$topic")"
+}
+
+# 资源查找
+cmd_find() {
+    local type="$*"
+    [ -z "$type" ] && echo "Error: 请指定资源类型" >&2 && exit 1
+    run_gemini "$(printf "$FIND_TEMPLATE" "$type")"
+}
+
+# 纯链接检索
+cmd_links() {
+    local topic="$*"
+    [ -z "$topic" ] && echo "Error: 请指定检索主题" >&2 && exit 1
+    run_gemini "$(printf "$LINKS_TEMPLATE" "$topic")"
+}
+
+# 提取要点
+cmd_extract() {
+    local input="$*"
+    if [[ "$input" =~ ^(https?://[^\ ]+)\ (.+)$ ]]; then
+        local url="${BASH_REMATCH[1]}"
+        local etype="${BASH_REMATCH[2]}"
+        run_gemini "请作为一个无情的数据提取器，从以下网页中精确提取出：$etype。\n要求：严禁解释、严禁自由发挥，只输出网页中符合目标的确切信息实体。\n\n目标网页的 URL：$url"
+    else
+        run_gemini "请作为一个无情的数据提取器，从以下内容中精确提取出：关键信息。\n要求：严禁解释、严禁自由发挥，只输出符合目标的确切信息实体。\n\n文本：$input"
+    fi
+}
+
+# 主逻辑
+cmd="${1:-help}"
+case "$cmd" in
+    deep) shift; cmd_deep "$@" ;;
+    summary) shift; cmd_summary "$@" ;;
+    compare) shift; cmd_compare "$@" ;;
+    list) shift; cmd_list "$@" ;;
+    news) shift; cmd_news "$@" ;;
+    find) shift; cmd_find "$@" ;;
+    links) shift; cmd_links "$@" ;;
+    extract) shift; cmd_extract "$@" ;;
+    template) show_template "$2" ;;
+    types) show_types ;;
+    help|--help|-h) show_help ;;
+    *)
+        if [ -n "$1" ]; then
+            run_gemini "$*"
+        else
+            show_help
+        fi
+        ;;
+esac
