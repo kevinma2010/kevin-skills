@@ -10,12 +10,22 @@ Kevin 的个人 Skill 集合，用于 Claude Code 等 AI 助手。
 
 ## 安装
 
-```bash
-git clone https://github.com/kevinma2010/kevin-skills.git
-cd kevin-skills
+### Claude Code
 
-# 将 skill 加入 PATH（以 gemini-researcher 为例）
-ln -s $(pwd)/skills/gemini-researcher/bin/gemini-researcher /usr/local/bin/
+```bash
+npx skills add kevinma2010/kevin-skills
+```
+
+### OpenClaw
+
+在聊天中告诉 OpenClaw：
+
+> 帮我安装这个 skill：https://github.com/kevinma2010/kevin-skills
+
+或使用命令行：
+
+```bash
+npx clawdhub@latest install kevinma2010/kevin-skills
 ```
 
 ## 目录结构
