@@ -6,6 +6,7 @@ Kevin 的个人 Skill 集合，用于 Claude Code 等 AI 助手。
 
 | Skill | 说明 |
 |-------|------|
+| [create-app](./skills/create-app/) | 从零创建生产级移动应用（Expo/React Native）：架构模板 + 生产踩坑经验 |
 | [gemini-researcher](./skills/gemini-researcher/) | 用 Gemini CLI 进行研究任务的小助手 |
 
 ## 安装
